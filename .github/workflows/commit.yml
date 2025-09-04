@@ -12,13 +12,51 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get commits from last time the workflow ran 
-        id: get_commits
+      - name: Determine last successful run time
+        id: last_run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          LAST_RUN=$(gh run list -w commit.yml -L 1 --json createdAt --jq '.[0].createdAt')
-          echo "Last run: $LAST_RUN"
-          gh api repos/{owner}/{repo}/commits --paginate --jq ".[] | select(.commit.author.date > \"$LAST_RUN\") | [.commit.author.date, .commit.message] | @csv" > .github/data/commit.csv
-          echo "Commits saved to .github/data/commit.csv"
-          
+
+          LAST_RUN=$(gh run list -w "${{ github.workflow }}" -s success -L 1 --json createdAt --jq '.[0].createdAt // empty')
+          if [ -z "$LAST_RUN" ]; then
+            LAST_RUN=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+            echo "No previous successful run found; defaulting to $LAST_RUN"
+          else
+            echo "Last successful run: $LAST_RUN"
+          fi
+          echo "last_run_time=$LAST_RUN" >> "$GITHUB_OUTPUT"
+
+      - name: Collect commit timestamps since last run
+        id: collect_ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SINCE: ${{ steps.last_run.outputs.last_run_time }}
+        run: |
+          gh api repos/$REPO/commits --paginate -F since="$SINCE" \
+            -q '.[].commit.author.date' \
+            | sort -u > timestamps.txt
+
+          echo "Found $(wc -l < timestamps.txt) commits since $SINCE"
+          echo "args=$(tr '\n' ' ' < timestamps.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run commit-graph.py with timestamps
+        run: |
+          SCRIPT_PATH=".github/scripts/commit-graph.py"
+
+          if [ ! -f "$SCRIPT_PATH" ]; then
+            echo "Script not found at $SCRIPT_PATH"; exit 1
+          fi
+
+          if [ ! -s timestamps.txt ]; then
+            echo "No new commits since last run. Nothing to do."
+            exit 0
+          fi
+
+          python "$SCRIPT_PATH" ${{ steps.collect_ts.outputs.args }}
