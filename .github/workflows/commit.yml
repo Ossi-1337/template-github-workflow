@@ -20,6 +20,6 @@ jobs:
         run: |
           LAST_RUN=$(gh run list -w commit.yml -L 1 --json createdAt --jq '.[0].createdAt')
           echo "Last run: $LAST_RUN"
-          gh api repos/{owner}/{repo}/commits --paginate --template '{{range .}}{{.commit.author.date}},{{.commit.message | @csv}}{{"\n"}}{{end}}' --jq ".[] | select(.commit.author.date > \"$LAST_RUN\")" > .github/data/commit.csv
+          gh api repos/{owner}/{repo}/commits --paginate --jq ".[] | select(.commit.author.date > \"$LAST_RUN\") | [.commit.author.date, .commit.message] | @csv" > .github/data/commit.csv
           echo "Commits saved to .github/data/commit.csv"
           
