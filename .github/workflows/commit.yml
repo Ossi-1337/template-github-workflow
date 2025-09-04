@@ -9,15 +9,12 @@ jobs:
   commit:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Determine last successful run time
         id: last_run
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-
+          set -Eeuo pipefail
           LAST_RUN=$(gh run list -w "${{ github.workflow }}" -s success -L 1 --json createdAt --jq '.[0].createdAt // empty')
           if [ -z "$LAST_RUN" ]; then
             LAST_RUN=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
@@ -34,12 +31,32 @@ jobs:
           REPO: ${{ github.repository }}
           SINCE: ${{ steps.last_run.outputs.last_run_time }}
         run: |
-          gh api repos/$REPO/commits --paginate -F since="$SINCE" \
-            -q '.[].commit.author.date' \
-            | sort -u > timestamps.txt
+          set -Eeuo pipefail
 
-          echo "Found $(wc -l < timestamps.txt) commits since $SINCE"
-          echo "args=$(tr '\n' ' ' < timestamps.txt)" >> "$GITHUB_OUTPUT"
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPO/commits?since=$SINCE&per_page=100" \
+            --paginate \
+            --jq '.[].commit.author.date' > timestamps.txt
+
+          if [ -s timestamps.txt ]; then
+            if ! awk '($0 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z(\.[0-9]+)?$/){bad=1} END{exit bad}' timestamps.txt; then
+              echo "Unexpected output in timestamps.txt (does not look like ISO8601)."
+              echo "First few lines:"; head -n 5 timestamps.txt
+              exit 1
+            fi
+          fi
+
+          sort -u -o timestamps.txt timestamps.txt
+
+          count=$(wc -l < timestamps.txt || echo 0)
+          echo "Found $count commits since $SINCE"
+
+          if [ "$count" -gt 0 ]; then
+            echo "args=$(tr '\n' ' ' < timestamps.txt)" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -47,16 +64,19 @@ jobs:
           python-version: '3.11'
 
       - name: Run commit-graph.py with timestamps
+        env:
+          ARGS: ${{ steps.collect_ts.outputs.args }}
         run: |
+          set -Eeuo pipefail
           SCRIPT_PATH=".github/scripts/commit-graph.py"
 
           if [ ! -f "$SCRIPT_PATH" ]; then
             echo "Script not found at $SCRIPT_PATH"; exit 1
           fi
 
-          if [ ! -s timestamps.txt ]; then
+          if [ -z "${ARGS:-}" ]; then
             echo "No new commits since last run. Nothing to do."
             exit 0
           fi
-
-          python "$SCRIPT_PATH" ${{ steps.collect_ts.outputs.args }}
+          
+          python "$SCRIPT_PATH" $ARGS
