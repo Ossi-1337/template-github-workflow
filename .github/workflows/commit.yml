@@ -1,0 +1,22 @@
+name: Commit Logger
+
+on:
+  schedule:
+    - cron: '/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get commits from last time the workflow ran 
+        id: get_commits
+        run: |
+          LAST_RUN=$(gh run list -w commit.yml -L 1 --json createdAt --jq '.[0].createdAt')
+          echo "Last run: $LAST_RUN"
+          gh api repos/{owner}/{repo}/commits --paginate --template '{{range .}}{{.commit.author.date}},{{.commit.message | @csv}}{{"\n"}}{{end}}' --jq ".[] | select(.commit.author.date > \"$LAST_RUN\")" > .github/data/commit.csv
+          echo "Commits saved to .github/data/commit.csv"
+          
