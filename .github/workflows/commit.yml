@@ -21,7 +21,6 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
 
-            Option B: since last run of a specific workflow file (uncomment to use)
             const { data } = await github.rest.actions.listWorkflowRunsForWorkflow({
                owner,
                repo,
