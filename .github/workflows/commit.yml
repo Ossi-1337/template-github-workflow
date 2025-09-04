@@ -6,77 +6,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  commit:
+  report:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine last successful run time
-        id: last_run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -Eeuo pipefail
-          LAST_RUN=$(gh run list -w "${{ github.workflow }}" -s success -L 1 --json createdAt --jq '.[0].createdAt // empty')
-          if [ -z "$LAST_RUN" ]; then
-            LAST_RUN=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-            echo "No previous successful run found; defaulting to $LAST_RUN"
-          else
-            echo "Last successful run: $LAST_RUN"
-          fi
-          echo "last_run_time=$LAST_RUN" >> "$GITHUB_OUTPUT"
-
-      - name: Collect commit timestamps since last run
-        id: collect_ts
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          SINCE: ${{ steps.last_run.outputs.last_run_time }}
-        run: |
-          set -Eeuo pipefail
-
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/$REPO/commits?since=$SINCE&per_page=100" \
-            --paginate \
-            --jq '.[].commit.author.date' > timestamps.txt
-
-          if [ -s timestamps.txt ]; then
-            if ! awk '($0 !~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z(\.[0-9]+)?$/){bad=1} END{exit bad}' timestamps.txt; then
-              echo "Unexpected output in timestamps.txt (does not look like ISO8601)."
-              echo "First few lines:"; head -n 5 timestamps.txt
-              exit 1
-            fi
-          fi
-
-          sort -u -o timestamps.txt timestamps.txt
-
-          count=$(wc -l < timestamps.txt || echo 0)
-          echo "Found $count commits since $SINCE"
-
-          if [ "$count" -gt 0 ]; then
-            echo "args=$(tr '\n' ' ' < timestamps.txt)" >> "$GITHUB_OUTPUT"
-          else
-            echo "args=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - name: Generate metrics (last 7 days)
+        uses: actions/github-script@v7
         with:
-          python-version: '3.11'
+          script: |
+            const { owner, repo } = context.repo;
 
-      - name: Run commit-graph.py with timestamps
-        env:
-          ARGS: ${{ steps.collect_ts.outputs.args }}
-        run: |
-          set -Eeuo pipefail
-          SCRIPT_PATH=".github/scripts/commit-graph.py"
-
-          if [ ! -f "$SCRIPT_PATH" ]; then
-            echo "Script not found at $SCRIPT_PATH"; exit 1
-          fi
-
-          if [ -z "${ARGS:-}" ]; then
-            echo "No new commits since last run. Nothing to do."
-            exit 0
-          fi
-          
-          python "$SCRIPT_PATH" $ARGS
+            const runs = await github.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'commit.yml',
+              per_page: 1,
+            });
+            const lastRun = runs.data[0];
+            const lastRunDate = lastRun ? new Date(lastRun.created_at) : new Date(0);
+            console.log(`Last run date: ${lastRunDate}`);
+            const commits = await github.repos.listCommits({
+              owner,
+              repo,
+              since: lastRunDate.toISOString(),
+              per_page: 100,
+            });
+            const commitData = commits.data.map(commit => ({
+              date: commit.commit.author.date,
+              message: commit.commit.message,
+            }));
+            const csvLines = commitData.map(c => `"${c.date}","${c.message.replace(/"/g, '""')}"`);
+            const csvContent = 'Date,Message\n' + csvLines.join('\n');
+            const fs = require('fs');
+            fs.writeFileSync('.github/data/commit.csv', csvContent);
+      - name: Commit data
+        run : |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .github/data/commit.csv
+          git commit -m 'Update commit data' || echo "No changes to commit"
+          git push
