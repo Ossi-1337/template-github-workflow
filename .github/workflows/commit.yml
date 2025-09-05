@@ -36,14 +36,15 @@ jobs:
               { owner, repo, since: sinceDate.toISOString(), per_page: 100 }
             );
 
-            const rows = (commitsResp.data || []).map(c => ({
-              date: c.commit?.author?.date ?? c.commit?.committer?.date ?? new Date().toISOString(),
-              message: (c.commit?.message ?? '').replace(/\r?\n/g, ' ')
-            }));
+            const rows = (commitsResp.data || [])
+              .filter(c => c.commit?.author?.name !== 'github-actions[bot]' && c.commit?.committer?.name !== 'github-actions[bot]')
+              .map(c => ({
+                date: c.commit?.author?.date ?? c.commit?.committer?.date ?? new Date().toISOString(),
+                message: (c.commit?.message ?? '').replace(/\r?\n/g, ' ')
+              }));
 
             if (!rows.length) {
-              core.info('No new commits since last completed run; leaving CSV unchanged.');
-              // ensure dir exists so git add doesn't fail on first run with no file
+              core.info('No new commits since last completed run (ignoring bot commits); leaving CSV unchanged.');
               fs.mkdirSync('.github/data', { recursive: true });
               if (!fs.existsSync(path)) {
                 fs.writeFileSync(path, 'Date,Message\n', 'utf8');
@@ -54,7 +55,6 @@ jobs:
             const esc = s => `"${String(s).replace(/"/g, '""')}"`;
             const newLines = rows.map(r => `${esc(r.date)},${esc(r.message)}`).join('\n');
 
-            // 3) Append (create file with header if missing)
             fs.mkdirSync('.github/data', { recursive: true });
             if (!fs.existsSync(path)) {
               fs.writeFileSync(path, 'Date,Message\n', 'utf8');
