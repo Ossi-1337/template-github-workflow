@@ -16,4 +16,4 @@ plt.tight_layout()
 for i, v in enumerate(commit_counts):
     ax.text(i, v + 0.05, str(v), ha='center', va='bottom')
 
-plt.savefig('.github/data/commit_graph.png')
+plt.savefig('.github/data/commit-graph.png')

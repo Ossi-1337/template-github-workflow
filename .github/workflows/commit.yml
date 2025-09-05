@@ -81,6 +81,6 @@ jobs:
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .github/data/commit_graph.png
+          git add .github/data/commit-graph.png
           git commit -m 'Update commit graph' || echo "No changes to commit"
           git push

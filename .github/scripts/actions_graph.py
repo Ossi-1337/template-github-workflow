@@ -32,5 +32,5 @@ for p in ax.patches:
             xytext=(0, 3), textcoords='offset points'
         )
 
-plt.savefig('.github/data/actions_graph.png', bbox_inches='tight', dpi=150)
+plt.savefig('.github/data/actions-graph.png', bbox_inches='tight', dpi=150)
 plt.close()
