@@ -20,7 +20,7 @@ jobs:
           script: | 
             const { owner, repo } = context.repo;
             const fs = require('fs');
-            const path = '.github/data/actions-metrics.csv';
+            const path = '.github/data/action-metrics.csv';
 
             const { data } = await github.request(
               'GET /repos/{owner}/{repo}/actions/runs',
