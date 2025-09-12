@@ -60,28 +60,25 @@ jobs:
         run: |
             git config --global user.name 'github-actions[bot]'
             git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-            git add .github/data/actions-metrics.csv
+            git add .github/data/action-metrics.csv
             if git diff --cached --quiet; then
               echo "No changes to commit"
             else
               git commit -m "Update GitHub Actions metrics data"
               git push
             fi
-      - name: Setup Python
+      - name: Setup Python and generate graph
         uses: actions/setup-python@v4
         with:
           python-version: '3.13.7'
-      - run: |
+        run: |
           pip install pandas matplotlib
-          python .github/scripts/commit_graph.py
-      - run: |
-          pip install pandas matplotlib
-          python .github/scripts/actions_graph.py
+          python .github/scripts/action_graph.py
 
       - name: Commit graph image
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .github/data/actions-graph.png
+          git add .github/data/action-graph.png
           git commit -m 'Update GitHub Actions graph' || echo "No changes to commit"
           git push
